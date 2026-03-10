@@ -1160,10 +1160,15 @@ function exportXlsx(targetId) {
   if (!act) { alert('活动不存在'); return; }
 
   const att = id === S.curId ? S.names.map(n => n.name) : (act.attended || []);
-  const attSet = new Set(att);
-  const matched   = S.roster.filter(n => attSet.has(n));
-  const absent    = S.roster.filter(n => !attSet.has(n));
-  const unmatched = att.filter(n => !S.roster.includes(n));
+  // 用模糊匹配重新计算（与页面显示逻辑一致）
+  const matchedRoster = new Set();
+  att.forEach(name => {
+    const r = findBestMatch(name, S.roster);
+    if (r.matched) matchedRoster.add(r.rosterName);
+  });
+  const matched   = S.roster.filter(n => matchedRoster.has(n));
+  const absent    = S.roster.filter(n => !matchedRoster.has(n));
+  const unmatched = att.filter(n => !findBestMatch(n, S.roster).matched);
 
   const wb = XLSX.utils.book_new();
 
@@ -1180,13 +1185,17 @@ function exportXlsx(targetId) {
     ['未匹配人数', unmatched.length],
   ]), '汇总');
 
-  // 明细
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-    ['序号','姓名','状态'],
-    ...matched.map((n,i)   => [i+1, n, '实到']),
-    ...absent.map((n,i)    => [matched.length+i+1, n, '缺勤']),
-    ...unmatched.map((n,i) => [matched.length+absent.length+i+1, n, '未匹配（不在应到名单）']),
-  ]), '考勤明细');
+  // 明细：应到名单全列出，实到打✓，缺勤留空，未匹配追加在后面
+  const detailRows = [['序号', '姓名', '出勤']];
+  S.roster.forEach((n, i) => {
+    const isAttended = matchedRoster.has(n);
+    detailRows.push([i + 1, n, isAttended ? '✓' : '']);
+  });
+  // 未匹配的追加到末尾
+  unmatched.forEach((n, i) => {
+    detailRows.push([S.roster.length + i + 1, n, '未匹配（不在应到名单）']);
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailRows), '考勤明细');
 
   // 缺勤
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
@@ -1273,25 +1282,28 @@ function editDistance(a, b) {
 function findBestMatch(name, roster) {
   if (!roster.length) return { matched: false };
 
-  // 1. 精确匹配
+  // 先标准化待匹配的名字
+  const nameNorm    = normalizeName(name);
+  const nameStripped = stripBrackets(nameNorm);
+
+  // 1. 精确匹配（原始 & 标准化）
   if (roster.includes(name)) return { matched: true, rosterName: name, exact: true };
 
-  const nameStripped = stripBrackets(name);
-
-  // 2. 去掉括号后精确匹配（处理"打小就聪明"匹配"打小就聪明（招满氪）"）
+  // 2. 标准化 + 去括号后精确匹配
   for (const r of roster) {
-    const rStripped = stripBrackets(r);
+    const rNorm    = normalizeName(r);
+    const rStripped = stripBrackets(rNorm);
+    if (nameNorm === rNorm)         return { matched: true, rosterName: r, exact: true };
     if (nameStripped === rStripped) return { matched: true, rosterName: r, exact: true };
-    if (name === rStripped)         return { matched: true, rosterName: r, exact: true };
-    if (nameStripped === r)         return { matched: true, rosterName: r, exact: true };
+    if (nameNorm === rStripped)     return { matched: true, rosterName: r, exact: true };
+    if (nameStripped === rNorm)     return { matched: true, rosterName: r, exact: true };
   }
 
-  // 3. 模糊匹配（用去括号后的字符串比较编辑距离）
+  // 3. 模糊匹配（标准化 + 去括号后比较编辑距离）
   let best = null, bestDist = Infinity;
   for (const r of roster) {
-    const rStripped = stripBrackets(r);
-    const a = nameStripped || name;
-    const b = rStripped    || r;
+    const a = nameStripped || nameNorm || name;
+    const b = stripBrackets(normalizeName(r)) || normalizeName(r) || r;
     const maxLen = Math.max(a.length, b.length);
     if (maxLen < 2) continue;
     const dist = editDistance(a, b);
@@ -1332,6 +1344,22 @@ function isValidName(s) {
  */
 function stripBrackets(s) {
   return s.replace(/[（(][^）)]*[）)]/g, '').trim();
+}
+
+/**
+ * 标准化名字，消除 OCR 常见误识别字符：
+ * - 竖线类：丨 | I（误识别为｜）→ 统一为 ｜
+ * - 中点类：· . ·（误识别中点）→ 统一为 ·
+ * - 全角/半角空格 → 去掉
+ */
+function normalizeName(s) {
+  return s
+    .replace(/童年汇[丨|I]\s*/g, '童年汇｜')   // 专项修复童年汇前缀
+    .replace(/听风醉[丨|I]\s*/g, '听风醉｜')   // 专项修复听风醉前缀
+    .replace(/[丨]/g, '｜')                      // 汉字竖 → 全角竖线
+    .replace(/(?<=[a-zA-Z\u4e00-\u9fa5])\|(?=[a-zA-Z\u4e00-\u9fa5])/g, '｜') // 半角竖线 → 全角
+    .replace(/\s+/g, '')                          // 去掉多余空格
+    .trim();
 }
 
 function esc(s) {

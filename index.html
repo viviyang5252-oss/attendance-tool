@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1e3a8a">
+  <title>联盟考勤工具 · 无尽冬日</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    :root {
+      --primary: #1e3a8a;
+      --primary-hover: #2d4fad;
+      --accent: #3b82f6;
+      --bg: #f1f5f9;
+      --bg-card: #ffffff;
+      --text: #1e293b;
+      --text-2: #64748b;
+      --text-3: #94a3b8;
+      --border: #e2e8f0;
+      --success: #16a34a;
+      --warning: #ca8a04;
+      --danger: #dc2626;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 2px 12px rgba(30,58,138,0.07);
+      --shadow-md: 0 4px 24px rgba(30,58,138,0.10);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--primary);
+      color: #fff;
+      height: 56px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 12px rgba(30,58,138,0.25);
+    }
+    .header-brand { display: flex; flex-direction: column; }
+    .header-title { font-size: 16px; font-weight: 700; letter-spacing: .3px; }
+    .header-sub { font-size: 11px; opacity: .65; margin-top: 1px; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .sync-pill {
+      font-size: 12px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.15);
+      cursor: pointer;
+      transition: background .15s;
+      user-select: none;
+    }
+    .sync-pill:hover { background: rgba(255,255,255,0.25); }
+    .sync-pill.ok  { background: rgba(34,197,94,0.3); }
+    .sync-pill.ing { background: rgba(245,158,11,0.3); }
+    .sync-pill.err { background: rgba(239,68,68,0.3); }
+
+    /* ── Layout ── */
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px 16px 40px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media(max-width:720px){ .wrap{ grid-template-columns:1fr; padding:12px 10px 32px; } }
+    .full { grid-column: 1/-1; }
+
+    /* ── Card ── */
+    .card {
+      background: var(--bg-card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .card-head {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .step-dot {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .card-body { padding: 18px; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all .15s;
+      white-space: nowrap;
+      line-height: 1;
+      font-family: inherit;
+    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary  { background: var(--primary); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-accent   { background: var(--accent); color: #fff; }
+    .btn-accent:hover:not(:disabled)  { background: #2563eb; }
+    .btn-ghost    { background: transparent; color: var(--primary); border: 1.5px solid var(--primary); }
+    .btn-ghost:hover:not(:disabled)   { background: #eff6ff; }
+    .btn-danger   { background: transparent; color: var(--danger); border: 1.5px solid #fca5a5; }
+    .btn-danger:hover:not(:disabled)  { background: #fef2f2; }
+    .btn-sm  { padding: 5px 10px; font-size: 12px; }
+    .btn-full{ width: 100%; justify-content: center; padding: 12px; font-size: 15px; }
+
+    /* ── Form ── */
+    .row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+    .fg  { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 100px; }
+    label { font-size: 12px; color: var(--text-2); font-weight: 500; }
+    input[type=text], input[type=date], input[type=password], select, textarea {
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 11px;
+      font-size: 13px;
+      color: var(--text);
+      background: #fff;
+      width: 100%;
+      font-family: inherit;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 110px; }
+
+    /* ── Tabs ── */
+    .tabs { display: flex; border-bottom: 2px solid var(--border); margin-bottom: 14px; }
+    .tab {
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-2);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all .15s;
+    }
+    .tab.on { color: var(--primary); border-bottom-color: var(--primary); }
+    .tp { display: none; }
+    .tp.on { display: block; }
+
+    /* ── Upload zone ── */
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-sm);
+      padding: 28px 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: all .15s;
+      background: #fafbfc;
+    }
+    .dropzone:hover, .dropzone.over { border-color: var(--accent); background: #eff6ff; }
+    .dropzone-icon { font-size: 28px; margin-bottom: 6px; }
+    .dropzone-text { color: var(--text-2); font-size: 13px; }
+    .dropzone-hint { color: var(--text-3); font-size: 11px; margin-top: 3px; }
+
+    /* ── Progress ── */
+    .prog-wrap { background: var(--bg); border-radius: 20px; height: 7px; overflow: hidden; margin: 7px 0; }
+    .prog-bar  { height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); border-radius: 20px; transition: width .25s ease; }
+
+    /* ── Table ── */
+    .tbl-wrap { overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      background: #f8fafc;
+      padding: 9px 12px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-2);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+    td { padding: 7px 12px; border-top: 1px solid var(--border); vertical-align: middle; }
+    tr:hover td { background: #f8fafc; }
+    .tbl-input {
+      border: none; background: transparent; width: 100%;
+      font-size: 13px; padding: 2px 4px; border-radius: 4px; color: var(--text); font-family: inherit;
+    }
+    .tbl-input:focus { outline: none; background: #eff6ff; border: 1px solid var(--accent); }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-flex; align-items: center;
+      padding: 3px 8px; border-radius: 20px;
+      font-size: 11px; font-weight: 500; white-space: nowrap;
+    }
+    .b-ok   { background: #dcfce7; color: #15803d; }
+    .b-warn { background: #fef9c3; color: #a16207; }
+    .b-err  { background: #fee2e2; color: #b91c1c; }
+    .b-info { background: #dbeafe; color: #1d4ed8; }
+
+    /* ── Stats ── */
+    .stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 14px; }
+    @media(max-width:480px){ .stats{ grid-template-columns: repeat(2,1fr); } }
+    .stat { background: var(--bg); border-radius: var(--radius-sm); padding: 12px; text-align: center; }
+    .stat-n { font-size: 26px; font-weight: 700; color: var(--primary); }
+    .stat-n.g { color: var(--success); }
+    .stat-n.r { color: var(--danger); }
+    .stat-n.y { color: var(--warning); }
+    .stat-l { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+
+    /* ── History ── */
+    .h-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 11px 0; border-bottom: 1px solid var(--border); gap: 10px;
+    }
+    .h-item:last-child { border-bottom: none; }
+    .h-info { flex: 1; min-width: 0; }
+    .h-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .h-meta { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+    .h-btns { display: flex; gap: 5px; flex-shrink: 0; }
+
+    /* ── Roster list ── */
+    .roster-scroll { border: 1px solid var(--border); border-radius: var(--radius-sm); max-height: 180px; overflow-y: auto; }
+    .roster-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 5px 12px; border-bottom: 1px solid var(--border); font-size: 13px;
+    }
+    .roster-row:last-child { border-bottom: none; }
+
+    /* ── Alert ── */
+    .alert { padding: 9px 13px; border-radius: var(--radius-sm); font-size: 12px; margin-bottom: 12px; }
+    .a-info { background: #dbeafe; color: #1d4ed8; }
+    .a-warn { background: #fef3c7; color: #92400e; }
+    .a-ok   { background: #dcfce7; color: #166534; }
+
+    /* ── Modal ── */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      z-index: 200; display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal {
+      background: #fff; border-radius: var(--radius); padding: 24px;
+      width: 100%; max-width: 460px; box-shadow: var(--shadow-md);
+    }
+    .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 14px; }
+    .modal-foot  { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
+    /* ── Util ── */
+    .mt8  { margin-top: 8px; }
+    .mt12 { margin-top: 12px; }
+    .mt16 { margin-top: 16px; }
+    .mb8  { margin-bottom: 8px; }
+    .flex { display: flex; }
+    .flex-wrap { flex-wrap: wrap; }
+    .gap6  { gap: 6px; }
+    .gap8  { gap: 8px; }
+    .jb { justify-content: space-between; }
+    .ac { align-items: center; }
+    .hidden { display: none !important; }
+    .muted  { color: var(--text-3); }
+    .empty  { text-align: center; padding: 36px 16px; color: var(--text-3); }
+    .empty-ico { font-size: 36px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════ HEADER ═══════════════ -->
+<header class="header">
+  <div class="header-brand">
+    <div class="header-title">联盟考勤工具</div>
+    <div class="header-sub">无尽冬日 · 出勤打卡系统</div>
+  </div>
+  <div class="header-right">
+    <div class="sync-pill" id="syncPill" onclick="openSettings()">⚙ 未配置</div>
+  </div>
+</header>
+
+<!-- ═══════════════ MAIN GRID ═══════════════ -->
+<div class="wrap">
+
+  <!-- ── 步骤1：活动管理 ── -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><div class="step-dot">1</div>选择 / 新建活动</div>
+    </div>
+    <div class="card-body">
+      <div class="row">
+        <div class="fg">
+          <label>日期</label>
+          <input type="date" id="actDate">
+        </div>
+        <div class="fg" style="flex:2">
+          <label>活动名称</label>
+          <input type="text" id="actName" placeholder="例：堡垒战、联盟战">
+        </div>
+        <button class="btn btn-primary" onclick="createActivity()">新建</button>
+      </div>
+      <div class="fg mt12">
+        <label>加载已有活动</label>
+        <select id="actSelect" onchange="loadActivity(this.value)" class="mt8">
+          <option value="">— 选择已有活动 —</option>
+        </select>
+      </div>
+      <div class="alert a-info mt12 hidden" id="actInfo">
+        当前活动：<strong id="actLabel"></strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 步骤2：应到名单 ── -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><div class="step-dot">2</div>应到名单管理</div>
+      <span class="badge b-info" id="rosterBadge">0 人</span>
+    </div>
+    <div class="card-body">
+      <div class="tabs">
+        <div class="tab on"  onclick="rTab('paste')">手动粘贴</div>
+        <div class="tab"     onclick="rTab('file')">导入文件</div>
+        <div class="tab"     onclick="rTab('ocr')">截图识别</div>
+      </div>
+
+      <!-- 粘贴 -->
+      <div class="tp on" id="rtp-paste">
+        <label>每行一个名字（保存后覆盖现有名单）</label>
+        <textarea id="pasteTa" placeholder="张三&#10;李四&#10;王五&#10;..."></textarea>
+        <div class="flex gap8 mt12">
+          <button class="btn btn-primary" onclick="saveFromPaste()">保存名单</button>
+          <button class="btn btn-ghost"   onclick="fillPaste()">编辑现有名单</button>
+        </div>
+      </div>
+
+      <!-- 文件 -->
+      <div class="tp" id="rtp-file">
+        <div class="alert a-info">支持 .xlsx / .csv，默认读取第一列为名字</div>
+        <div class="dropzone" id="fileZone" onclick="document.getElementById('fileInput').click()">
+          <div class="dropzone-icon">📂</div>
+          <div class="dropzone-text">点击选择文件</div>
+          <div class="dropzone-hint">.xlsx 或 .csv</div>
+        </div>
+        <input type="file" id="fileInput" accept=".xlsx,.csv" style="display:none" onchange="importFile(this)">
+      </div>
+
+      <!-- OCR -->
+      <div class="tp" id="rtp-ocr">
+        <div class="alert a-warn">上传联盟成员列表截图，整图识别后可编辑再保存（覆盖现有名单）</div>
+        <div class="dropzone" onclick="document.getElementById('rOcrInput').click()">
+          <div class="dropzone-icon">📷</div>
+          <div class="dropzone-text">点击上传截图</div>
+          <div class="dropzone-hint">PNG / JPG</div>
+        </div>
+        <input type="file" id="rOcrInput" accept="image/*" style="display:none" onchange="rOcrRun(this)">
+        <div id="rOcrProg" class="hidden mt12">
+          <div class="flex jb ac"><span class="muted" id="rOcrTxt" style="font-size:12px">识别中...</span></div>
+          <div class="prog-wrap"><div class="prog-bar" id="rOcrBar" style="width:0%"></div></div>
+        </div>
+        <div id="rOcrRes" class="hidden mt12">
+          <label>识别结果（可编辑，确认后保存）</label>
+          <textarea id="rOcrTa" class="mt8" style="min-height:90px"></textarea>
+          <button class="btn btn-primary mt12" onclick="saveFromOcr()">确认保存为应到名单</button>
+        </div>
+      </div>
+
+      <!-- 名单预览 -->
+      <div id="rosterPrev" class="mt16 hidden">
+        <div class="flex jb ac mb8">
+          <label>当前应到名单</label>
+          <button class="btn btn-danger btn-sm" onclick="clearRoster()">清空</button>
+        </div>
+        <div class="roster-scroll" id="rosterList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 步骤3：上传打卡截图 ── -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><div class="step-dot">3</div>上传打卡截图</div>
+    </div>
+    <div class="card-body">
+      <div id="noActAlert" class="alert a-warn">请先完成步骤 1，新建或选择一个活动</div>
+      <div class="dropzone" id="attZone" onclick="document.getElementById('attInput').click()">
+        <div class="dropzone-icon">🖼</div>
+        <div class="dropzone-text">点击选择战报截图（可多张）</div>
+        <div class="dropzone-hint">PNG / JPG，一次可选多张</div>
+      </div>
+      <input type="file" id="attInput" accept="image/*" multiple style="display:none" onchange="attFilePick(this)">
+
+      <div id="attFileInfo" class="flex jb ac mt12 hidden">
+        <span id="attFileText" style="font-size:12px;color:var(--text-2)"></span>
+        <button class="btn btn-danger btn-sm" onclick="clearAttFiles()">清空</button>
+      </div>
+
+      <button class="btn btn-accent btn-full mt12" id="ocrBtn" onclick="runAttOcr()" disabled>
+        开始识别
+      </button>
+
+      <div id="attProg" class="hidden mt12">
+        <div class="flex jb ac" style="font-size:12px;color:var(--text-2)">
+          <span id="attProgTxt">准备中...</span>
+          <span id="attProgPct">0%</span>
+        </div>
+        <div class="prog-wrap"><div class="prog-bar" id="attProgBar" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 步骤4：考勤结果 ── -->
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title"><div class="step-dot">4</div>考勤结果</div>
+      <button class="btn btn-ghost btn-sm" onclick="recalc()">重新计算</button>
+    </div>
+    <div class="card-body">
+      <div class="stats">
+        <div class="stat"><div class="stat-n"   id="sTotal">0</div><div class="stat-l">应到</div></div>
+        <div class="stat"><div class="stat-n g" id="sAtt">0</div><div class="stat-l">实到</div></div>
+        <div class="stat"><div class="stat-n r" id="sAbs">0</div><div class="stat-l">缺勤</div></div>
+        <div class="stat"><div class="stat-n y" id="sUnm">0</div><div class="stat-l">未匹配</div></div>
+      </div>
+      <button class="btn btn-primary btn-full" onclick="exportXlsx()">导出 Excel (.xlsx)</button>
+    </div>
+  </div>
+
+  <!-- ── 打卡名单明细（全宽） ── -->
+  <div class="card full" id="detailCard">
+    <div class="card-head">
+      <div class="card-title">识别到的打卡名单（去重后，可手动修改名字）</div>
+      <button class="btn btn-ghost btn-sm" onclick="addManual()">手动添加</button>
+    </div>
+    <div class="card-body">
+      <div class="empty" id="detailEmpty">
+        <div class="empty-ico">📋</div>
+        <div>还没有识别结果，请上传战报截图并点击"开始识别"</div>
+      </div>
+      <div class="tbl-wrap hidden" id="detailWrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>打卡名字（可修改）</th>
+              <th>匹配状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="detailBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 缺勤名单（全宽） ── -->
+  <div class="card full">
+    <div class="card-head">
+      <div class="card-title">缺勤名单</div>
+    </div>
+    <div class="card-body">
+      <div class="empty" id="absEmpty"><div class="empty-ico">✅</div><div>暂无缺勤记录</div></div>
+      <div id="absList" class="flex flex-wrap gap6 hidden"></div>
+    </div>
+  </div>
+
+  <!-- ── 历史记录（全宽） ── -->
+  <div class="card full">
+    <div class="card-head">
+      <div class="card-title">历史活动记录</div>
+      <button class="btn btn-ghost btn-sm" onclick="syncNow()">立即同步</button>
+    </div>
+    <div class="card-body">
+      <div class="empty" id="histEmpty"><div class="empty-ico">📅</div><div>暂无记录</div></div>
+      <div id="histList"></div>
+    </div>
+  </div>
+
+</div><!-- /wrap -->
+
+<!-- ═══════════════ SETTINGS MODAL ═══════════════ -->
+<div class="overlay hidden" id="settingsModal">
+  <div class="modal">
+    <div class="modal-title">⚙ 云同步设置（GitHub Gist）</div>
+    <div class="alert a-info">
+      配置后数据将自动同步到您的私密 GitHub Gist，手机和电脑共享同一份数据。
+    </div>
+    <div class="fg mt12">
+      <label>GitHub Personal Access Token</label>
+      <input type="password" id="stToken" placeholder="ghp_xxxxxxxxx...">
+      <span style="font-size:11px;color:var(--text-3);margin-top:4px">
+        需要勾选 <b>gist</b> 权限。
+        <a href="https://github.com/settings/tokens/new?scopes=gist&description=attendance-tool" target="_blank" style="color:var(--accent)">点此生成 Token →</a>
+      </span>
+    </div>
+    <div class="fg mt12">
+      <label>Gist ID（首次留空，保存后自动创建）</label>
+      <input type="text" id="stGistId" placeholder="首次保存后自动填入...">
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeSettings()">取消</button>
+      <button class="btn btn-primary" onclick="saveSettings()">保存并同步</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ CDN LIBS ═══════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+
+<script>
+// ================================================================
+//  STATE
+// ================================================================
+let S = {
+  token: '',
+  gistId: '',
+  roster: [],          // ['张三', '李四', ...]
+  activities: {},      // { id: { id, date, name, attended:[], createdAt } }
+  curId: null,
+  names: [],           // [{name}] for current activity (working copy)
+};
+
+let attFiles = [];
+
+// ================================================================
+//  INIT
+// ================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('actDate').value = today();
+  loadLocal();
+  refreshAll();
+  if (S.token && S.gistId) pullGist();
+  // drag-drop
+  setupDrop('attZone', f => { attFiles = f; refreshAttFiles(); });
+});
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function refreshAll() {
+  renderActSelect();
+  renderRoster();
+  renderDetail();
+  recalc();
+  renderHist();
+  updateActInfo();
+  updateSyncPill();
+  refreshAttBtn();
+}
+
+// ================================================================
+//  LOCAL STORAGE
+// ================================================================
+function saveLocal() {
+  localStorage.setItem('wd_att', JSON.stringify({
+    token: S.token, gistId: S.gistId,
+    roster: S.roster, activities: S.activities,
+    curId: S.curId, names: S.names
+  }));
+}
+
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem('wd_att');
+    if (raw) Object.assign(S, JSON.parse(raw));
+  } catch(e) {}
+}
+
+// ================================================================
+//  GIST SYNC
+// ================================================================
+async function pushGist() {
+  if (!S.token) return;
+  setSyncPill('ing');
+  const content = JSON.stringify({ roster: S.roster, activities: S.activities }, null, 2);
+  try {
+    const body = { token: S.token, filename: 'wd_attendance.json', content };
+    const method = S.gistId ? 'PUT' : 'POST';
+    if (S.gistId) body.gistId = S.gistId;
+    const r = await fetch('/api/gist', {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (d.id) { S.gistId = d.id; saveLocal(); setSyncPill('ok'); }
+    else setSyncPill('err');
+  } catch(e) { setSyncPill('err'); }
+}
+
+async function pullGist() {
+  if (!S.token || !S.gistId) return;
+  setSyncPill('ing');
+  try {
+    const r = await fetch(`/api/gist?token=${encodeURIComponent(S.token)}&gistId=${encodeURIComponent(S.gistId)}`);
+    const d = await r.json();
+    if (d.files?.['wd_attendance.json']) {
+      const c = JSON.parse(d.files['wd_attendance.json'].content);
+      S.roster = c.roster || [];
+      S.activities = c.activities || {};
+      // refresh names for current activity
+      if (S.curId && S.activities[S.curId]) {
+        S.names = (S.activities[S.curId].attended || []).map(n => ({ name: n }));
+      }
+      saveLocal();
+      refreshAll();
+      setSyncPill('ok');
+    } else { setSyncPill('err'); }
+  } catch(e) { setSyncPill('err'); }
+}
+
+function syncNow() { S.gistId ? pullGist() : (S.token ? pushGist() : openSettings()); }
+
+function setSyncPill(s) {
+  const el = document.getElementById('syncPill');
+  el.className = 'sync-pill';
+  if (!S.token) { el.textContent = '⚙ 未配置'; return; }
+  if (s === 'ok')  { el.className += ' ok';  el.textContent = '✓ 已同步'; }
+  if (s === 'ing') { el.className += ' ing'; el.textContent = '↻ 同步中'; }
+  if (s === 'err') { el.className += ' err'; el.textContent = '✗ 同步失败'; }
+}
+function updateSyncPill() { setSyncPill(S.token ? 'ok' : ''); }
+
+// ================================================================
+//  SETTINGS MODAL
+// ================================================================
+function openSettings() {
+  document.getElementById('stToken').value  = S.token  || '';
+  document.getElementById('stGistId').value = S.gistId || '';
+  document.getElementById('settingsModal').classList.remove('hidden');
+}
+function closeSettings() { document.getElementById('settingsModal').classList.add('hidden'); }
+async function saveSettings() {
+  S.token  = document.getElementById('stToken').value.trim();
+  S.gistId = document.getElementById('stGistId').value.trim();
+  saveLocal(); closeSettings(); updateSyncPill();
+  if (S.token) { S.gistId ? await pullGist() : await pushGist(); }
+}
+
+// ================================================================
+//  ACTIVITY
+// ================================================================
+function createActivity() {
+  const date = document.getElementById('actDate').value;
+  const name = document.getElementById('actName').value.trim();
+  if (!date || !name) { alert('请填写日期和活动名称'); return; }
+  const id = `${date} · ${name}`;
+  if (S.activities[id]) {
+    if (!confirm(`活动"${id}"已存在，直接加载？`)) return;
+  } else {
+    S.activities[id] = { id, date, name, attended: [], createdAt: new Date().toISOString() };
+  }
+  switchActivity(id);
+  saveLocal(); pushGist();
+  renderActSelect(); renderHist();
+}
+
+function loadActivity(id) {
+  if (!id) return;
+  switchActivity(id);
+}
+
+function switchActivity(id) {
+  S.curId = id;
+  const act = S.activities[id];
+  S.names = act ? (act.attended || []).map(n => ({ name: n })) : [];
+  attFiles = [];
+  document.getElementById('attInput').value = '';
+  document.getElementById('attFileInfo').classList.add('hidden');
+  document.getElementById('attProg').classList.add('hidden');
+  updateActInfo();
+  renderDetail();
+  recalc();
+  refreshAttBtn();
+  saveLocal();
+}
+
+function updateActInfo() {
+  const infoEl = document.getElementById('actInfo');
+  const noAct  = document.getElementById('noActAlert');
+  if (S.curId) {
+    document.getElementById('actLabel').textContent = S.curId;
+    infoEl.classList.remove('hidden');
+    noAct.classList.add('hidden');
+  } else {
+    infoEl.classList.add('hidden');
+    noAct.classList.remove('hidden');
+  }
+}
+
+function renderActSelect() {
+  const sel = document.getElementById('actSelect');
+  const ids = Object.keys(S.activities).sort().reverse();
+  sel.innerHTML = '<option value="">— 选择已有活动 —</option>';
+  ids.forEach(id => {
+    const o = document.createElement('option');
+    o.value = id; o.textContent = id;
+    if (id === S.curId) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+// ================================================================
+//  ROSTER
+// ================================================================
+function rTab(t) {
+  document.querySelectorAll('.tabs .tab').forEach((el, i) => {
+    el.classList.toggle('on', ['paste','file','ocr'][i] === t);
+  });
+  document.querySelectorAll('.tp').forEach(el => el.classList.remove('on'));
+  document.getElementById(`rtp-${t}`).classList.add('on');
+}
+
+function saveFromPaste() {
+  const names = parsePaste(document.getElementById('pasteTa').value);
+  if (!names.length) { alert('名单不能为空'); return; }
+  applyRoster(names);
+}
+
+function fillPaste() {
+  document.getElementById('pasteTa').value = S.roster.join('\n');
+}
+
+function parsePaste(text) {
+  return [...new Set(text.split('\n').map(l => l.trim()).filter(l => l.length))];
+}
+
+function importFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const isCsv = file.name.toLowerCase().endsWith('.csv');
+  const reader = new FileReader();
+  if (isCsv) {
+    reader.onload = e => {
+      const rows = e.target.result.split('\n')
+        .map(l => l.split(',')[0].replace(/"/g,'').trim()).filter(Boolean);
+      applyRoster([...new Set(rows)]);
+    };
+    reader.readAsText(file, 'UTF-8');
+  } else {
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        const names = rows.map(r => String(r[0]||'').trim()).filter(n => n.length);
+        if (!names.length) { alert('未能读取到名字，请确认第一列有内容'); return; }
+        applyRoster([...new Set(names)]);
+      } catch(e) { alert('文件解析失败'); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+}
+
+async function rOcrRun(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('rOcrProg').classList.remove('hidden');
+  document.getElementById('rOcrRes').classList.add('hidden');
+  const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
+    logger: m => {
+      if (m.status === 'recognizing text') {
+        const p = Math.round(m.progress * 100);
+        document.getElementById('rOcrBar').style.width = p + '%';
+        document.getElementById('rOcrTxt').textContent = `识别中 ${p}%`;
+      }
+    }
+  });
+  const { data: { text } } = await worker.recognize(file);
+  await worker.terminate();
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length >= 2 && l.length <= 14);
+  document.getElementById('rOcrTa').value = lines.join('\n');
+  document.getElementById('rOcrTxt').textContent = '识别完成，请检查并修改';
+  document.getElementById('rOcrRes').classList.remove('hidden');
+}
+
+function saveFromOcr() {
+  const names = parsePaste(document.getElementById('rOcrTa').value);
+  if (!names.length) { alert('名单不能为空'); return; }
+  applyRoster(names);
+}
+
+function applyRoster(names) {
+  S.roster = names;
+  saveLocal(); pushGist();
+  renderRoster(); recalc();
+  alert(`已保存 ${S.roster.length} 人到应到名单`);
+}
+
+function clearRoster() {
+  if (!confirm('确定清空应到名单？')) return;
+  S.roster = [];
+  saveLocal(); pushGist();
+  renderRoster(); recalc();
+}
+
+function removeRosterOne(i) {
+  S.roster.splice(i, 1);
+  saveLocal(); pushGist();
+  renderRoster(); recalc();
+}
+
+function renderRoster() {
+  document.getElementById('rosterBadge').textContent = `${S.roster.length} 人`;
+  const prev = document.getElementById('rosterPrev');
+  const list = document.getElementById('rosterList');
+  if (!S.roster.length) { prev.classList.add('hidden'); return; }
+  prev.classList.remove('hidden');
+  list.innerHTML = S.roster.map((n, i) => `
+    <div class="roster-row">
+      <span>${i+1}. ${esc(n)}</span>
+      <button class="btn btn-sm" style="background:none;border:none;color:var(--danger);cursor:pointer"
+        onclick="removeRosterOne(${i})">✕</button>
+    </div>`).join('');
+}
+
+// ================================================================
+//  ATTENDANCE OCR
+// ================================================================
+function attFilePick(input) {
+  attFiles = Array.from(input.files);
+  refreshAttFiles();
+}
+
+function refreshAttFiles() {
+  const info = document.getElementById('attFileInfo');
+  const txt  = document.getElementById('attFileText');
+  if (attFiles.length) {
+    txt.textContent = `已选 ${attFiles.length} 张截图`;
+    info.classList.remove('hidden');
+  } else {
+    info.classList.add('hidden');
+  }
+  refreshAttBtn();
+}
+
+function clearAttFiles() {
+  attFiles = [];
+  document.getElementById('attInput').value = '';
+  refreshAttFiles();
+  document.getElementById('attProg').classList.add('hidden');
+}
+
+function refreshAttBtn() {
+  document.getElementById('ocrBtn').disabled = !(attFiles.length && S.curId);
+}
+
+async function runAttOcr() {
+  if (!S.curId) { alert('请先选择活动（步骤1）'); return; }
+  if (!attFiles.length) { alert('请先选择截图'); return; }
+
+  document.getElementById('attProg').classList.remove('hidden');
+  document.getElementById('ocrBtn').disabled = true;
+  const allNames = [];
+
+  for (let i = 0; i < attFiles.length; i++) {
+    document.getElementById('attProgTxt').textContent = `识别第 ${i+1} / ${attFiles.length} 张...`;
+    const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          const pct = Math.round(((i + m.progress) / attFiles.length) * 100);
+          document.getElementById('attProgBar').style.width = pct + '%';
+          document.getElementById('attProgPct').textContent = pct + '%';
+        }
+      }
+    });
+    const { data: { text } } = await worker.recognize(attFiles[i]);
+    await worker.terminate();
+    text.split('\n').map(l => l.trim()).filter(l => l.length >= 2 && l.length <= 14).forEach(n => allNames.push(n));
+  }
+
+  // deduplicate then merge with existing
+  const existing = new Set(S.names.map(n => n.name));
+  const newOnes  = [...new Set(allNames)].filter(n => !existing.has(n));
+  S.names = [...S.names, ...newOnes.map(n => ({ name: n }))];
+
+  saveNames();
+  document.getElementById('attProgTxt').textContent = `识别完成！共识别 ${new Set(allNames).size} 个名字`;
+  document.getElementById('attProgBar').style.width = '100%';
+  document.getElementById('attProgPct').textContent = '100%';
+  document.getElementById('ocrBtn').disabled = false;
+  renderDetail(); recalc();
+}
+
+function saveNames() {
+  if (!S.curId) return;
+  const act = S.activities[S.curId];
+  if (act) {
+    act.attended = S.names.map(n => n.name);
+    act.updatedAt = new Date().toISOString();
+    saveLocal(); pushGist();
+  }
+}
+
+// ================================================================
+//  DETAIL TABLE
+// ================================================================
+function renderDetail() {
+  const wrap  = document.getElementById('detailWrap');
+  const empty = document.getElementById('detailEmpty');
+  const tbody = document.getElementById('detailBody');
+  if (!S.names.length) { wrap.classList.add('hidden'); empty.classList.remove('hidden'); return; }
+  wrap.classList.remove('hidden'); empty.classList.add('hidden');
+  tbody.innerHTML = S.names.map((item, i) => {
+    const matched = S.roster.includes(item.name);
+    const badge = S.roster.length === 0
+      ? `<span class="badge b-info">名单未配置</span>`
+      : matched
+        ? `<span class="badge b-ok">✓ 已匹配</span>`
+        : `<span class="badge b-warn">未匹配，请修改名字</span>`;
+    return `<tr>
+      <td class="muted">${i+1}</td>
+      <td><input class="tbl-input" value="${esc(item.name)}"
+        onchange="updateName(${i},this.value)" onblur="updateName(${i},this.value)"></td>
+      <td>${badge}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="removeName(${i})">删除</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function updateName(i, v) {
+  v = v.trim(); if (!v) return;
+  S.names[i].name = v;
+  saveNames(); recalc(); renderDetail();
+}
+
+function removeName(i) {
+  S.names.splice(i, 1);
+  saveNames(); renderDetail(); recalc();
+}
+
+function addManual() {
+  const n = prompt('输入要手动添加的名字：');
+  if (!n || !n.trim()) return;
+  const t = n.trim();
+  if (S.names.find(x => x.name === t)) { alert('该名字已存在'); return; }
+  if (!S.curId) { alert('请先选择活动'); return; }
+  S.names.push({ name: t });
+  saveNames(); renderDetail(); recalc();
+}
+
+// ================================================================
+//  RECALCULATE
+// ================================================================
+function recalc() {
+  const att = S.names.map(n => n.name);
+  const attSet = new Set(att);
+  const matched = S.roster.filter(n => attSet.has(n));
+  const absent  = S.roster.filter(n => !attSet.has(n));
+  const unmatched = att.filter(n => !S.roster.includes(n));
+
+  document.getElementById('sTotal').textContent = S.roster.length;
+  document.getElementById('sAtt').textContent   = matched.length;
+  document.getElementById('sAbs').textContent   = absent.length;
+  document.getElementById('sUnm').textContent   = unmatched.length;
+
+  const absList  = document.getElementById('absList');
+  const absEmpty = document.getElementById('absEmpty');
+  if (absent.length) {
+    absEmpty.classList.add('hidden');
+    absList.classList.remove('hidden');
+    absList.innerHTML = absent.map(n => `<span class="badge b-err">${esc(n)}</span>`).join('');
+  } else {
+    absEmpty.classList.remove('hidden');
+    absList.classList.add('hidden');
+  }
+}
+
+// ================================================================
+//  EXPORT XLSX
+// ================================================================
+function exportXlsx(targetId) {
+  const id = targetId || S.curId;
+  if (!id) { alert('请先选择一个活动'); return; }
+  const act = S.activities[id];
+  if (!act) { alert('活动不存在'); return; }
+
+  const att = id === S.curId ? S.names.map(n => n.name) : (act.attended || []);
+  const attSet = new Set(att);
+  const matched   = S.roster.filter(n => attSet.has(n));
+  const absent    = S.roster.filter(n => !attSet.has(n));
+  const unmatched = att.filter(n => !S.roster.includes(n));
+
+  const wb = XLSX.utils.book_new();
+
+  // 汇总
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['联盟考勤汇总'],
+    ['活动名称', act.name],
+    ['日期', act.date],
+    ['导出时间', new Date().toLocaleString('zh-CN')],
+    [],
+    ['应到人数', S.roster.length],
+    ['实到人数', matched.length],
+    ['缺勤人数', absent.length],
+    ['未匹配人数', unmatched.length],
+  ]), '汇总');
+
+  // 明细
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['序号','姓名','状态'],
+    ...matched.map((n,i)   => [i+1, n, '实到']),
+    ...absent.map((n,i)    => [matched.length+i+1, n, '缺勤']),
+    ...unmatched.map((n,i) => [matched.length+absent.length+i+1, n, '未匹配（不在应到名单）']),
+  ]), '考勤明细');
+
+  // 缺勤
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['序号','缺勤成员'],
+    ...absent.map((n,i) => [i+1, n]),
+  ]), '缺勤名单');
+
+  XLSX.writeFile(wb, `考勤_${id}_${today()}.xlsx`);
+}
+
+// ================================================================
+//  HISTORY
+// ================================================================
+function renderHist() {
+  const list  = document.getElementById('histList');
+  const empty = document.getElementById('histEmpty');
+  const ids = Object.keys(S.activities).sort().reverse();
+  if (!ids.length) { empty.classList.remove('hidden'); list.innerHTML = ''; return; }
+  empty.classList.add('hidden');
+  list.innerHTML = ids.map(id => {
+    const act = S.activities[id];
+    const att = act.attended || [];
+    const attSet = new Set(att);
+    const matched = S.roster.filter(n => attSet.has(n));
+    const absent  = S.roster.length ? S.roster.length - matched.length : '?';
+    return `<div class="h-item">
+      <div class="h-info">
+        <div class="h-name">${esc(id)}</div>
+        <div class="h-meta">打卡 ${att.length} 人 · 实到 ${matched.length} · 缺勤 ${absent}</div>
+      </div>
+      <div class="h-btns">
+        <button class="btn btn-ghost btn-sm" onclick="loadActivity('${esc(id)}')">加载</button>
+        <button class="btn btn-primary btn-sm" onclick="exportXlsx('${esc(id)}')">导出</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteActivity('${esc(id)}')">删除</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function deleteActivity(id) {
+  if (!confirm(`确定删除活动"${id}"？`)) return;
+  delete S.activities[id];
+  if (S.curId === id) { S.curId = null; S.names = []; }
+  saveLocal(); pushGist();
+  renderActSelect(); renderHist(); updateActInfo(); renderDetail(); recalc();
+}
+
+// ================================================================
+//  DRAG & DROP
+// ================================================================
+function setupDrop(zoneId, cb) {
+  const zone = document.getElementById(zoneId);
+  if (!zone) return;
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('over');
+    cb(Array.from(e.dataTransfer.files));
+  });
+}
+
+// ================================================================
+//  UTIL
+// ================================================================
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

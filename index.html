@@ -1267,20 +1267,34 @@ function editDistance(a, b) {
 
 /**
  * 在 roster 中查找最佳匹配
- * - 先精确匹配
- * - 再模糊匹配（编辑距离 ≤ 2，且误差比例 ≤ 30%）
+ * 优先级：精确匹配 → 去括号后精确匹配 → 模糊匹配（编辑距离）
  * 返回 { matched, rosterName, exact }
  */
 function findBestMatch(name, roster) {
   if (!roster.length) return { matched: false };
-  // 精确
+
+  // 1. 精确匹配
   if (roster.includes(name)) return { matched: true, rosterName: name, exact: true };
-  // 模糊
+
+  const nameStripped = stripBrackets(name);
+
+  // 2. 去掉括号后精确匹配（处理"打小就聪明"匹配"打小就聪明（招满氪）"）
+  for (const r of roster) {
+    const rStripped = stripBrackets(r);
+    if (nameStripped === rStripped) return { matched: true, rosterName: r, exact: true };
+    if (name === rStripped)         return { matched: true, rosterName: r, exact: true };
+    if (nameStripped === r)         return { matched: true, rosterName: r, exact: true };
+  }
+
+  // 3. 模糊匹配（用去括号后的字符串比较编辑距离）
   let best = null, bestDist = Infinity;
   for (const r of roster) {
-    const maxLen = Math.max(name.length, r.length);
+    const rStripped = stripBrackets(r);
+    const a = nameStripped || name;
+    const b = rStripped    || r;
+    const maxLen = Math.max(a.length, b.length);
     if (maxLen < 2) continue;
-    const dist = editDistance(name, r);
+    const dist = editDistance(a, b);
     const ratio = dist / maxLen;
     if (dist <= 2 && ratio <= 0.35 && dist < bestDist) {
       bestDist = dist; best = r;
@@ -1296,18 +1310,28 @@ function findBestMatch(name, roster) {
 
 /**
  * 判断一行文字是否是有效的玩家名字
- * 过滤掉：纯数字、带逗号的积分数字、排名序号等无效行
- * 保留：包含汉字 或 包含英文字母 的行（即真正的名字）
+ * 过滤掉：纯数字、积分数字、括号内容、UI标签等无效行
+ * 保留：包含汉字或字母的真实名字
  */
 function isValidName(s) {
   if (!s || s.length < 2 || s.length > 20) return false;
-  // 纯数字（含逗号、空格分隔的积分，如 309,091 或 309091）
+  // 纯数字（含逗号分隔的积分，如 309,091）
   if (/^[\d,，.\s]+$/.test(s)) return false;
+  // 以括号开头的行（如"(招满氪)"，是名字里的附加说明被单独识别出来的）
+  if (/^[（(]/.test(s)) return false;
   // 只有标点/特殊符号
   if (/^[^\u4e00-\u9fa5a-zA-Z0-9]+$/.test(s)) return false;
-  // 必须包含至少一个汉字或字母（排除纯数字+符号组合）
+  // 必须包含至少一个汉字或字母
   if (!/[\u4e00-\u9fa5a-zA-Z]/.test(s)) return false;
   return true;
+}
+
+/**
+ * 去掉名字中的括号说明（如"打小就聪明（招满氪）"→"打小就聪明"）
+ * 用于模糊匹配时忽略括号内容的差异
+ */
+function stripBrackets(s) {
+  return s.replace(/[（(][^）)]*[）)]/g, '').trim();
 }
 
 function esc(s) {

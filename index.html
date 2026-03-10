@@ -522,6 +522,22 @@
       <label>Gist ID（首次留空，保存后自动创建）</label>
       <input type="text" id="stGistId" placeholder="首次保存后自动填入...">
     </div>
+
+    <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">🚀 百度 OCR（可选，识别更快）</div>
+    <div class="alert a-info" style="font-size:11px">
+      配置后识别速度从数十秒缩短到 1-3 秒。免费额度每天 50000 次，完全够用。<br>
+      <a href="https://cloud.baidu.com/product/ocr_general" target="_blank" style="color:var(--accent)">点此注册百度智能云 →</a>（注册后创建「文字识别」应用，复制 API Key 和 Secret Key）
+    </div>
+    <div class="fg mt12">
+      <label>百度 OCR · API Key</label>
+      <input type="password" id="stBaiduKey" placeholder="粘贴 API Key...">
+    </div>
+    <div class="fg mt12">
+      <label>百度 OCR · Secret Key</label>
+      <input type="password" id="stBaiduSecret" placeholder="粘贴 Secret Key...">
+    </div>
+
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeSettings()">取消</button>
       <button class="btn btn-primary" onclick="saveSettings()">保存并同步</button>
@@ -535,6 +551,50 @@
 <!-- Tesseract.js 体积大（~4MB），点击OCR时再按需加载 -->
 
 <script>
+// ================================================================
+//  图片压缩（压缩到最大宽1200px，加速OCR）
+// ================================================================
+function compressImage(file, maxWidth = 1200) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let w = img.width, h = img.height;
+      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.85);
+    };
+    img.src = url;
+  });
+}
+
+async function fileToBase64(file) {
+  const compressed = await compressImage(file);
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result.split(',')[1]);
+    reader.readAsDataURL(compressed);
+  });
+}
+
+// ================================================================
+//  百度 OCR（云端，快）
+// ================================================================
+async function baiduOcr(file) {
+  const base64 = await fileToBase64(file);
+  const res = await fetch('/api/ocr', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey: S.baiduKey, secretKey: S.baiduSecret, imageBase64: base64 })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  return data.lines || [];
+}
+
 // ================================================================
 //  TESSERACT 按需加载
 // ================================================================
@@ -556,6 +616,8 @@ function loadTesseract() {
 let S = {
   token: '',
   gistId: '',
+  baiduKey: '',
+  baiduSecret: '',
   roster: [],          // ['张三', '李四', ...]
   activities: {},      // { id: { id, date, name, attended:[], createdAt } }
   curId: null,
@@ -668,14 +730,18 @@ function updateSyncPill() { setSyncPill(S.token ? 'ok' : ''); }
 //  SETTINGS MODAL
 // ================================================================
 function openSettings() {
-  document.getElementById('stToken').value  = S.token  || '';
-  document.getElementById('stGistId').value = S.gistId || '';
+  document.getElementById('stToken').value      = S.token      || '';
+  document.getElementById('stGistId').value     = S.gistId     || '';
+  document.getElementById('stBaiduKey').value   = S.baiduKey   || '';
+  document.getElementById('stBaiduSecret').value= S.baiduSecret|| '';
   document.getElementById('settingsModal').classList.remove('hidden');
 }
 function closeSettings() { document.getElementById('settingsModal').classList.add('hidden'); }
 async function saveSettings() {
-  S.token  = document.getElementById('stToken').value.trim();
-  S.gistId = document.getElementById('stGistId').value.trim();
+  S.token       = document.getElementById('stToken').value.trim();
+  S.gistId      = document.getElementById('stGistId').value.trim();
+  S.baiduKey    = document.getElementById('stBaiduKey').value.trim();
+  S.baiduSecret = document.getElementById('stBaiduSecret').value.trim();
   saveLocal(); closeSettings(); updateSyncPill();
   if (S.token) { S.gistId ? await pullGist() : await pushGist(); }
 }
@@ -800,20 +866,36 @@ async function rOcrRun(input) {
   if (!file) return;
   document.getElementById('rOcrProg').classList.remove('hidden');
   document.getElementById('rOcrRes').classList.add('hidden');
-  document.getElementById('rOcrTxt').textContent = '加载识别引擎中，请稍候...';
-  try { await loadTesseract(); } catch(e) { alert(e.message); return; }
-  const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
-    logger: m => {
-      if (m.status === 'recognizing text') {
-        const p = Math.round(m.progress * 100);
-        document.getElementById('rOcrBar').style.width = p + '%';
-        document.getElementById('rOcrTxt').textContent = `识别中 ${p}%`;
-      }
+
+  let lines = [];
+  try {
+    if (S.baiduKey && S.baiduSecret) {
+      document.getElementById('rOcrTxt').textContent = '正在调用百度OCR识别...';
+      document.getElementById('rOcrBar').style.width = '60%';
+      lines = await baiduOcr(file);
+      document.getElementById('rOcrBar').style.width = '100%';
+    } else {
+      document.getElementById('rOcrTxt').textContent = '加载本地识别引擎（首次较慢）...';
+      await loadTesseract();
+      const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            const p = Math.round(m.progress * 100);
+            document.getElementById('rOcrBar').style.width = p + '%';
+            document.getElementById('rOcrTxt').textContent = `识别中 ${p}%`;
+          }
+        }
+      });
+      // 压缩后识别
+      const compressed = await compressImage(file);
+      const { data: { text } } = await worker.recognize(compressed);
+      await worker.terminate();
+      lines = text.split('\n').map(l => l.trim()).filter(l => l.length >= 2 && l.length <= 14);
     }
-  });
-  const { data: { text } } = await worker.recognize(file);
-  await worker.terminate();
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length >= 2 && l.length <= 14);
+  } catch(e) {
+    alert('识别失败：' + e.message); return;
+  }
+
   document.getElementById('rOcrTa').value = lines.join('\n');
   document.getElementById('rOcrTxt').textContent = '识别完成，请检查并修改';
   document.getElementById('rOcrRes').classList.remove('hidden');
@@ -896,24 +978,43 @@ async function runAttOcr() {
 
   document.getElementById('attProg').classList.remove('hidden');
   document.getElementById('ocrBtn').disabled = true;
-  document.getElementById('attProgTxt').textContent = '加载识别引擎中，请稍候...';
-  try { await loadTesseract(); } catch(e) { alert(e.message); document.getElementById('ocrBtn').disabled = false; return; }
   const allNames = [];
+  const useBaidu = !!(S.baiduKey && S.baiduSecret);
 
-  for (let i = 0; i < attFiles.length; i++) {
-    document.getElementById('attProgTxt').textContent = `识别第 ${i+1} / ${attFiles.length} 张...`;
-    const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
-      logger: m => {
-        if (m.status === 'recognizing text') {
-          const pct = Math.round(((i + m.progress) / attFiles.length) * 100);
-          document.getElementById('attProgBar').style.width = pct + '%';
-          document.getElementById('attProgPct').textContent = pct + '%';
-        }
+  if (useBaidu) {
+    // ── 百度 OCR 模式（快）──
+    for (let i = 0; i < attFiles.length; i++) {
+      document.getElementById('attProgTxt').textContent = `百度识别第 ${i+1} / ${attFiles.length} 张...`;
+      const pct = Math.round((i / attFiles.length) * 100);
+      document.getElementById('attProgBar').style.width = pct + '%';
+      document.getElementById('attProgPct').textContent = pct + '%';
+      try {
+        const lines = await baiduOcr(attFiles[i]);
+        lines.filter(l => l.length >= 2 && l.length <= 16).forEach(n => allNames.push(n));
+      } catch(e) {
+        alert(`第${i+1}张识别失败：${e.message}`); break;
       }
-    });
-    const { data: { text } } = await worker.recognize(attFiles[i]);
-    await worker.terminate();
-    text.split('\n').map(l => l.trim()).filter(l => l.length >= 2 && l.length <= 14).forEach(n => allNames.push(n));
+    }
+  } else {
+    // ── Tesseract 本地模式（慢但无需配置）──
+    document.getElementById('attProgTxt').textContent = '加载本地识别引擎（首次较慢）...';
+    try { await loadTesseract(); } catch(e) { alert(e.message); document.getElementById('ocrBtn').disabled = false; return; }
+    for (let i = 0; i < attFiles.length; i++) {
+      document.getElementById('attProgTxt').textContent = `识别第 ${i+1} / ${attFiles.length} 张...`;
+      const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            const pct = Math.round(((i + m.progress) / attFiles.length) * 100);
+            document.getElementById('attProgBar').style.width = pct + '%';
+            document.getElementById('attProgPct').textContent = pct + '%';
+          }
+        }
+      });
+      const compressed = await compressImage(attFiles[i]);
+      const { data: { text } } = await worker.recognize(compressed);
+      await worker.terminate();
+      text.split('\n').map(l => l.trim()).filter(l => l.length >= 2 && l.length <= 14).forEach(n => allNames.push(n));
+    }
   }
 
   // deduplicate then merge with existing

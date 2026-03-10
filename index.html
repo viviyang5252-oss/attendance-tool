@@ -890,7 +890,7 @@ async function rOcrRun(input) {
       const compressed = await compressImage(file);
       const { data: { text } } = await worker.recognize(compressed);
       await worker.terminate();
-      lines = text.split('\n').map(l => l.trim()).filter(l => l.length >= 2 && l.length <= 14);
+      lines = text.split('\n').map(l => l.trim()).filter(isValidName);
     }
   } catch(e) {
     alert('识别失败：' + e.message); return;
@@ -990,7 +990,7 @@ async function runAttOcr() {
       document.getElementById('attProgPct').textContent = pct + '%';
       try {
         const lines = await baiduOcr(attFiles[i]);
-        lines.filter(l => l.length >= 2 && l.length <= 16).forEach(n => allNames.push(n));
+        lines.filter(isValidName).forEach(n => allNames.push(n));
       } catch(e) {
         alert(`第${i+1}张识别失败：${e.message}`); break;
       }
@@ -1013,7 +1013,7 @@ async function runAttOcr() {
       const compressed = await compressImage(attFiles[i]);
       const { data: { text } } = await worker.recognize(compressed);
       await worker.terminate();
-      text.split('\n').map(l => l.trim()).filter(l => l.length >= 2 && l.length <= 14).forEach(n => allNames.push(n));
+      text.split('\n').map(l => l.trim()).filter(isValidName).forEach(n => allNames.push(n));
     }
   }
 
@@ -1215,6 +1215,23 @@ function setupDrop(zoneId, cb) {
 // ================================================================
 //  UTIL
 // ================================================================
+
+/**
+ * 判断一行文字是否是有效的玩家名字
+ * 过滤掉：纯数字、带逗号的积分数字、排名序号等无效行
+ * 保留：包含汉字 或 包含英文字母 的行（即真正的名字）
+ */
+function isValidName(s) {
+  if (!s || s.length < 2 || s.length > 20) return false;
+  // 纯数字（含逗号、空格分隔的积分，如 309,091 或 309091）
+  if (/^[\d,，.\s]+$/.test(s)) return false;
+  // 只有标点/特殊符号
+  if (/^[^\u4e00-\u9fa5a-zA-Z0-9]+$/.test(s)) return false;
+  // 必须包含至少一个汉字或字母（排除纯数字+符号组合）
+  if (!/[\u4e00-\u9fa5a-zA-Z]/.test(s)) return false;
+  return true;
+}
+
 function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }

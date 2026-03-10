@@ -541,6 +541,16 @@
       <input type="password" id="stBaiduSecret" placeholder="粘贴 Secret Key...">
     </div>
 
+    <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">🚫 自定义过滤词</div>
+    <div class="alert a-info" style="font-size:11px">
+      识别后自动过滤掉这些词，每行一个。例：删除、邮件、个人军工积分
+    </div>
+    <div class="fg mt12">
+      <label>过滤词列表（每行一个）</label>
+      <textarea id="stFilterWords" placeholder="删除&#10;邮件&#10;个人军工积分&#10;..." style="min-height:80px"></textarea>
+    </div>
+
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeSettings()">取消</button>
       <button class="btn btn-primary" onclick="saveSettings()">保存并同步</button>
@@ -621,6 +631,7 @@ let S = {
   gistId: '',
   baiduKey: '',
   baiduSecret: '',
+  filterWords: [],     // 自定义过滤词列表
   roster: [],          // ['张三', '李四', ...]
   activities: {},      // { id: { id, date, name, attended:[], createdAt } }
   curId: null,
@@ -733,10 +744,11 @@ function updateSyncPill() { setSyncPill(S.token ? 'ok' : ''); }
 //  SETTINGS MODAL
 // ================================================================
 function openSettings() {
-  document.getElementById('stToken').value      = S.token      || '';
-  document.getElementById('stGistId').value     = S.gistId     || '';
-  document.getElementById('stBaiduKey').value   = S.baiduKey   || '';
-  document.getElementById('stBaiduSecret').value= S.baiduSecret|| '';
+  document.getElementById('stToken').value       = S.token       || '';
+  document.getElementById('stGistId').value      = S.gistId      || '';
+  document.getElementById('stBaiduKey').value    = S.baiduKey    || '';
+  document.getElementById('stBaiduSecret').value = S.baiduSecret || '';
+  document.getElementById('stFilterWords').value = S.filterWords.join('\n') || '';
   document.getElementById('settingsModal').classList.remove('hidden');
 }
 function closeSettings() { document.getElementById('settingsModal').classList.add('hidden'); }
@@ -745,6 +757,8 @@ async function saveSettings() {
   S.gistId      = document.getElementById('stGistId').value.trim();
   S.baiduKey    = document.getElementById('stBaiduKey').value.trim();
   S.baiduSecret = document.getElementById('stBaiduSecret').value.trim();
+  S.filterWords = document.getElementById('stFilterWords').value
+    .split('\n').map(l => l.trim()).filter(Boolean);
   saveLocal(); closeSettings(); updateSyncPill();
   if (S.token) { S.gistId ? await pullGist() : await pushGist(); }
 }
@@ -1320,21 +1334,35 @@ function findBestMatch(name, roster) {
 //  UTIL
 // ================================================================
 
+// 内置游戏界面常见干扰词黑名单
+const BUILTIN_BLOCKLIST = new Set([
+  '删除','邮件','确定','取消','返回','关闭','设置','菜单','背包','商店',
+  '领取','查看','详情','提交','收藏','分享','举报','屏蔽','跳过',
+  '个人军工积分','军工积分','联盟积分','活跃度','战力','等级','排名',
+  '将在','生效','已生效','邮件箱','联盟邮件','系统邮件',
+  '第一名','第二名','第三名','排行榜','本周','本月','历史',
+  '点击','滑动','上滑','下滑','查看更多','加载中','加载更多',
+  '凸口','凸','口','将在',
+]);
+
 /**
  * 判断一行文字是否是有效的玩家名字
- * 过滤掉：纯数字、积分数字、括号内容、UI标签等无效行
- * 保留：包含汉字或字母的真实名字
+ * 过滤掉：纯数字、积分、括号内容、游戏UI文字、用户自定义过滤词
  */
 function isValidName(s) {
   if (!s || s.length < 2 || s.length > 20) return false;
   // 纯数字（含逗号分隔的积分，如 309,091）
   if (/^[\d,，.\s]+$/.test(s)) return false;
-  // 以括号开头的行（如"(招满氪)"，是名字里的附加说明被单独识别出来的）
+  // 以括号开头的行（如"(招满氪)"）
   if (/^[（(]/.test(s)) return false;
   // 只有标点/特殊符号
   if (/^[^\u4e00-\u9fa5a-zA-Z0-9]+$/.test(s)) return false;
   // 必须包含至少一个汉字或字母
   if (!/[\u4e00-\u9fa5a-zA-Z]/.test(s)) return false;
+  // 内置黑名单
+  if (BUILTIN_BLOCKLIST.has(s)) return false;
+  // 用户自定义过滤词（支持包含匹配：过滤词出现在识别行中即过滤）
+  if (S.filterWords && S.filterWords.some(w => w && s.includes(w))) return false;
   return true;
 }
 

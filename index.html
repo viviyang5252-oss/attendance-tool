@@ -530,10 +530,26 @@
 </div>
 
 <!-- ═══════════════ CDN LIBS ═══════════════ -->
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<!-- SheetJS 体积小，正常加载 -->
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<!-- Tesseract.js 体积大（~4MB），点击OCR时再按需加载 -->
 
 <script>
+// ================================================================
+//  TESSERACT 按需加载
+// ================================================================
+let tesseractReady = false;
+function loadTesseract() {
+  return new Promise((resolve, reject) => {
+    if (tesseractReady) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
+    s.onload  = () => { tesseractReady = true; resolve(); };
+    s.onerror = () => reject(new Error('Tesseract 加载失败，请检查网络'));
+    document.head.appendChild(s);
+  });
+}
+
 // ================================================================
 //  STATE
 // ================================================================
@@ -784,6 +800,8 @@ async function rOcrRun(input) {
   if (!file) return;
   document.getElementById('rOcrProg').classList.remove('hidden');
   document.getElementById('rOcrRes').classList.add('hidden');
+  document.getElementById('rOcrTxt').textContent = '加载识别引擎中，请稍候...';
+  try { await loadTesseract(); } catch(e) { alert(e.message); return; }
   const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
     logger: m => {
       if (m.status === 'recognizing text') {
@@ -878,6 +896,8 @@ async function runAttOcr() {
 
   document.getElementById('attProg').classList.remove('hidden');
   document.getElementById('ocrBtn').disabled = true;
+  document.getElementById('attProgTxt').textContent = '加载识别引擎中，请稍候...';
+  try { await loadTesseract(); } catch(e) { alert(e.message); document.getElementById('ocrBtn').disabled = false; return; }
   const allNames = [];
 
   for (let i = 0; i < attFiles.length; i++) {

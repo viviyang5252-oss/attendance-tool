@@ -455,7 +455,10 @@
   <div class="card full" id="detailCard">
     <div class="card-head">
       <div class="card-title">识别到的打卡名单（去重后，可手动修改名字）</div>
-      <button class="btn btn-ghost btn-sm" onclick="addManual()">手动添加</button>
+      <div class="flex gap6">
+        <button class="btn btn-ghost btn-sm" onclick="addManual()">手动添加</button>
+        <button class="btn btn-danger btn-sm" onclick="clearAllNames()">一键清空</button>
+      </div>
     </div>
     <div class="card-body">
       <div class="empty" id="detailEmpty">
@@ -875,14 +878,22 @@ async function rOcrRun(input) {
       lines = await baiduOcr(file);
       document.getElementById('rOcrBar').style.width = '100%';
     } else {
-      document.getElementById('rOcrTxt').textContent = '加载本地识别引擎（首次较慢）...';
+      document.getElementById('rOcrTxt').textContent = '⏳ 加载本地引擎（首次需下载约20MB）...';
+      document.getElementById('rOcrBar').style.width = '5%';
       await loadTesseract();
       const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
         logger: m => {
-          if (m.status === 'recognizing text') {
-            const p = Math.round(m.progress * 100);
+          const statusMap = {
+            'loading tesseract core':       '加载引擎核心...',
+            'initializing tesseract':       '初始化引擎...',
+            'loading language traineddata': '下载中文语言包（首次约20MB）...',
+            'initializing api':             '准备就绪...',
+            'recognizing text':             `识别中 ${Math.round(m.progress*100)}%`,
+          };
+          if (statusMap[m.status]) {
+            document.getElementById('rOcrTxt').textContent = statusMap[m.status];
+            const p = m.status === 'recognizing text' ? Math.round(m.progress * 100) : 30;
             document.getElementById('rOcrBar').style.width = p + '%';
-            document.getElementById('rOcrTxt').textContent = `识别中 ${p}%`;
           }
         }
       });
@@ -997,16 +1008,27 @@ async function runAttOcr() {
     }
   } else {
     // ── Tesseract 本地模式（慢但无需配置）──
-    document.getElementById('attProgTxt').textContent = '加载本地识别引擎（首次较慢）...';
+    document.getElementById('attProgTxt').textContent = '⏳ 正在加载本地识别引擎（首次需下载约20MB，请耐心等待）...';
+    document.getElementById('attProgBar').style.width = '5%';
     try { await loadTesseract(); } catch(e) { alert(e.message); document.getElementById('ocrBtn').disabled = false; return; }
+    document.getElementById('attProgBar').style.width = '10%';
     for (let i = 0; i < attFiles.length; i++) {
-      document.getElementById('attProgTxt').textContent = `识别第 ${i+1} / ${attFiles.length} 张...`;
+      document.getElementById('attProgTxt').textContent = `识别第 ${i+1} / ${attFiles.length} 张（本地引擎，速度较慢）...`;
+      const baseProgress = i / attFiles.length;
       const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
         logger: m => {
-          if (m.status === 'recognizing text') {
-            const pct = Math.round(((i + m.progress) / attFiles.length) * 100);
-            document.getElementById('attProgBar').style.width = pct + '%';
-            document.getElementById('attProgPct').textContent = pct + '%';
+          let pct = Math.round((baseProgress + m.progress / attFiles.length) * 90) + 10;
+          document.getElementById('attProgBar').style.width = pct + '%';
+          document.getElementById('attProgPct').textContent = pct + '%';
+          const statusMap = {
+            'loading tesseract core':    '加载引擎核心...',
+            'initializing tesseract':    '初始化引擎...',
+            'loading language traineddata': '下载中文语言包（首次约20MB）...',
+            'initializing api':          '准备就绪...',
+            'recognizing text':          `识别第${i+1}张...`,
+          };
+          if (statusMap[m.status]) {
+            document.getElementById('attProgTxt').textContent = statusMap[m.status];
           }
         }
       });
@@ -1050,12 +1072,14 @@ function renderDetail() {
   if (!S.names.length) { wrap.classList.add('hidden'); empty.classList.remove('hidden'); return; }
   wrap.classList.remove('hidden'); empty.classList.add('hidden');
   tbody.innerHTML = S.names.map((item, i) => {
-    const matched = S.roster.includes(item.name);
+    const result = findBestMatch(item.name, S.roster);
     const badge = S.roster.length === 0
       ? `<span class="badge b-info">名单未配置</span>`
-      : matched
+      : result.matched && result.exact
         ? `<span class="badge b-ok">✓ 已匹配</span>`
-        : `<span class="badge b-warn">未匹配，请修改名字</span>`;
+        : result.matched && !result.exact
+          ? `<span class="badge b-ok" title="模糊匹配：应到名单中的「${result.rosterName}」">≈ 模糊匹配</span>`
+          : `<span class="badge b-warn">未匹配，请修改名字</span>`;
     return `<tr>
       <td class="muted">${i+1}</td>
       <td><input class="tbl-input" value="${esc(item.name)}"
@@ -1077,6 +1101,13 @@ function removeName(i) {
   saveNames(); renderDetail(); recalc();
 }
 
+function clearAllNames() {
+  if (!S.names.length) return;
+  if (!confirm(`确定清空全部 ${S.names.length} 条打卡记录？`)) return;
+  S.names = [];
+  saveNames(); renderDetail(); recalc();
+}
+
 function addManual() {
   const n = prompt('输入要手动添加的名字：');
   if (!n || !n.trim()) return;
@@ -1092,10 +1123,15 @@ function addManual() {
 // ================================================================
 function recalc() {
   const att = S.names.map(n => n.name);
-  const attSet = new Set(att);
-  const matched = S.roster.filter(n => attSet.has(n));
-  const absent  = S.roster.filter(n => !attSet.has(n));
-  const unmatched = att.filter(n => !S.roster.includes(n));
+  // 用模糊匹配：找出 roster 中每个成员是否被打卡名单覆盖
+  const matchedRoster = new Set();
+  att.forEach(name => {
+    const r = findBestMatch(name, S.roster);
+    if (r.matched) matchedRoster.add(r.rosterName);
+  });
+  const matched   = S.roster.filter(n => matchedRoster.has(n));
+  const absent    = S.roster.filter(n => !matchedRoster.has(n));
+  const unmatched = att.filter(n => !findBestMatch(n, S.roster).matched);
 
   document.getElementById('sTotal').textContent = S.roster.length;
   document.getElementById('sAtt').textContent   = matched.length;
@@ -1210,6 +1246,48 @@ function setupDrop(zoneId, cb) {
     e.preventDefault(); zone.classList.remove('over');
     cb(Array.from(e.dataTransfer.files));
   });
+}
+
+// ================================================================
+//  模糊匹配（编辑距离，容忍OCR错字）
+// ================================================================
+function editDistance(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  const dp = Array.from({length: m+1}, (_, i) =>
+    Array.from({length: n+1}, (_, j) => i === 0 ? j : j === 0 ? i : 0)
+  );
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1]
+        ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
+  return dp[m][n];
+}
+
+/**
+ * 在 roster 中查找最佳匹配
+ * - 先精确匹配
+ * - 再模糊匹配（编辑距离 ≤ 2，且误差比例 ≤ 30%）
+ * 返回 { matched, rosterName, exact }
+ */
+function findBestMatch(name, roster) {
+  if (!roster.length) return { matched: false };
+  // 精确
+  if (roster.includes(name)) return { matched: true, rosterName: name, exact: true };
+  // 模糊
+  let best = null, bestDist = Infinity;
+  for (const r of roster) {
+    const maxLen = Math.max(name.length, r.length);
+    if (maxLen < 2) continue;
+    const dist = editDistance(name, r);
+    const ratio = dist / maxLen;
+    if (dist <= 2 && ratio <= 0.35 && dist < bestDist) {
+      bestDist = dist; best = r;
+    }
+  }
+  if (best) return { matched: true, rosterName: best, exact: false };
+  return { matched: false };
 }
 
 // ================================================================

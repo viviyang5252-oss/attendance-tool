@@ -372,13 +372,14 @@
 
       <!-- OCR -->
       <div class="tp" id="rtp-ocr">
-        <div class="alert a-warn">上传联盟成员列表截图，整图识别后可编辑再保存（覆盖现有名单）</div>
+        <div class="alert a-warn">上传联盟成员列表截图（可多张），自动过滤无效文字，识别后可编辑再保存（覆盖现有名单）</div>
         <div class="dropzone" onclick="document.getElementById('rOcrInput').click()">
           <div class="dropzone-icon">📷</div>
-          <div class="dropzone-text">点击上传截图</div>
-          <div class="dropzone-hint">PNG / JPG</div>
+          <div class="dropzone-text">点击上传截图（可多张）</div>
+          <div class="dropzone-hint">PNG / JPG，一次可选多张</div>
         </div>
-        <input type="file" id="rOcrInput" accept="image/*" style="display:none" onchange="rOcrRun(this)">
+        <input type="file" id="rOcrInput" accept="image/*" multiple style="display:none" onchange="rOcrRun(this)">
+        <div id="rOcrFileInfo" class="hidden mt8" style="font-size:12px;color:var(--text-2)"></div>
         <div id="rOcrProg" class="hidden mt12">
           <div class="flex jb ac"><span class="muted" id="rOcrTxt" style="font-size:12px">识别中...</span></div>
           <div class="prog-wrap"><div class="prog-bar" id="rOcrBar" style="width:0%"></div></div>
@@ -559,9 +560,7 @@
 </div>
 
 <!-- ═══════════════ CDN LIBS ═══════════════ -->
-<!-- SheetJS 体积小，正常加载 -->
-<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-<!-- Tesseract.js 体积大（~4MB），点击OCR时再按需加载 -->
+<!-- SheetJS 和 Tesseract.js 均按需加载，加快首屏速度 -->
 
 <script>
 // ================================================================
@@ -609,18 +608,26 @@ async function baiduOcr(file) {
 }
 
 // ================================================================
-//  TESSERACT 按需加载
+//  按需加载脚本（通用）
 // ================================================================
-let tesseractReady = false;
-function loadTesseract() {
+const _loaded = {};
+function loadScript(url, key) {
   return new Promise((resolve, reject) => {
-    if (tesseractReady) { resolve(); return; }
+    if (_loaded[key]) { resolve(); return; }
     const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js';
-    s.onload  = () => { tesseractReady = true; resolve(); };
-    s.onerror = () => reject(new Error('Tesseract 加载失败，请检查网络'));
+    s.src = url;
+    s.onload  = () => { _loaded[key] = true; resolve(); };
+    s.onerror = () => reject(new Error(`加载失败: ${url}`));
     document.head.appendChild(s);
   });
+}
+
+function loadTesseract() {
+  return loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js', 'tesseract');
+}
+
+function loadXlsx() {
+  return loadScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js', 'xlsx');
 }
 
 // ================================================================
@@ -851,7 +858,7 @@ function parsePaste(text) {
   return [...new Set(text.split('\n').map(l => l.trim()).filter(l => l.length))];
 }
 
-function importFile(input) {
+async function importFile(input) {
   const file = input.files[0];
   if (!file) return;
   const isCsv = file.name.toLowerCase().endsWith('.csv');
@@ -864,6 +871,7 @@ function importFile(input) {
     };
     reader.readAsText(file, 'UTF-8');
   } else {
+    try { await loadXlsx(); } catch(e) { alert('Excel库加载失败，请检查网络'); return; }
     reader.onload = e => {
       try {
         const wb = XLSX.read(e.target.result, { type: 'array' });
@@ -879,50 +887,67 @@ function importFile(input) {
 }
 
 async function rOcrRun(input) {
-  const file = input.files[0];
-  if (!file) return;
+  const files = Array.from(input.files);
+  if (!files.length) return;
+
+  // 显示已选文件数
+  const fileInfo = document.getElementById('rOcrFileInfo');
+  fileInfo.textContent = `已选 ${files.length} 张截图`;
+  fileInfo.classList.remove('hidden');
+
   document.getElementById('rOcrProg').classList.remove('hidden');
   document.getElementById('rOcrRes').classList.add('hidden');
 
-  let lines = [];
+  const allLines = [];
+  const useBaidu = !!(S.baiduKey && S.baiduSecret);
+
   try {
-    if (S.baiduKey && S.baiduSecret) {
-      document.getElementById('rOcrTxt').textContent = '正在调用百度OCR识别...';
-      document.getElementById('rOcrBar').style.width = '60%';
-      lines = await baiduOcr(file);
+    if (useBaidu) {
+      // 百度 OCR：循环处理每张图
+      for (let i = 0; i < files.length; i++) {
+        document.getElementById('rOcrTxt').textContent = `百度识别第 ${i+1} / ${files.length} 张...`;
+        document.getElementById('rOcrBar').style.width = Math.round((i / files.length) * 90) + '%';
+        const lines = await baiduOcr(files[i]);
+        lines.filter(isValidName).forEach(l => allLines.push(l));
+      }
       document.getElementById('rOcrBar').style.width = '100%';
     } else {
+      // 本地 Tesseract：循环处理每张图
       document.getElementById('rOcrTxt').textContent = '⏳ 加载本地引擎（首次需下载约20MB）...';
       document.getElementById('rOcrBar').style.width = '5%';
       await loadTesseract();
-      const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
-        logger: m => {
-          const statusMap = {
-            'loading tesseract core':       '加载引擎核心...',
-            'initializing tesseract':       '初始化引擎...',
-            'loading language traineddata': '下载中文语言包（首次约20MB）...',
-            'initializing api':             '准备就绪...',
-            'recognizing text':             `识别中 ${Math.round(m.progress*100)}%`,
-          };
-          if (statusMap[m.status]) {
-            document.getElementById('rOcrTxt').textContent = statusMap[m.status];
-            const p = m.status === 'recognizing text' ? Math.round(m.progress * 100) : 30;
-            document.getElementById('rOcrBar').style.width = p + '%';
+      for (let i = 0; i < files.length; i++) {
+        const baseProgress = i / files.length;
+        const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
+          logger: m => {
+            const statusMap = {
+              'loading tesseract core':       '加载引擎核心...',
+              'initializing tesseract':       '初始化引擎...',
+              'loading language traineddata': '下载中文语言包（首次约20MB）...',
+              'initializing api':             '准备就绪...',
+              'recognizing text':             `识别第 ${i+1}/${files.length} 张 ${Math.round(m.progress*100)}%`,
+            };
+            if (statusMap[m.status]) {
+              document.getElementById('rOcrTxt').textContent = statusMap[m.status];
+              const p = Math.round((baseProgress + (m.status === 'recognizing text' ? m.progress / files.length : 0)) * 90) + 10;
+              document.getElementById('rOcrBar').style.width = p + '%';
+            }
           }
-        }
-      });
-      // 压缩后识别
-      const compressed = await compressImage(file);
-      const { data: { text } } = await worker.recognize(compressed);
-      await worker.terminate();
-      lines = text.split('\n').map(l => l.trim()).filter(isValidName);
+        });
+        const compressed = await compressImage(files[i]);
+        const { data: { text } } = await worker.recognize(compressed);
+        await worker.terminate();
+        text.split('\n').map(l => l.trim()).filter(isValidName).forEach(l => allLines.push(l));
+      }
     }
   } catch(e) {
     alert('识别失败：' + e.message); return;
   }
 
-  document.getElementById('rOcrTa').value = lines.join('\n');
-  document.getElementById('rOcrTxt').textContent = '识别完成，请检查并修改';
+  // 去重后填入编辑框
+  const deduped = [...new Set(allLines)];
+  document.getElementById('rOcrTa').value = deduped.join('\n');
+  document.getElementById('rOcrTxt').textContent = `识别完成，共 ${deduped.length} 个名字，请检查并修改`;
   document.getElementById('rOcrRes').classList.remove('hidden');
 }
 
@@ -1167,11 +1192,12 @@ function recalc() {
 // ================================================================
 //  EXPORT XLSX
 // ================================================================
-function exportXlsx(targetId) {
+async function exportXlsx(targetId) {
   const id = targetId || S.curId;
   if (!id) { alert('请先选择一个活动'); return; }
   const act = S.activities[id];
   if (!act) { alert('活动不存在'); return; }
+  try { await loadXlsx(); } catch(e) { alert('Excel库加载失败，请检查网络'); return; }
 
   const att = id === S.curId ? S.names.map(n => n.name) : (act.attended || []);
   // 用模糊匹配重新计算（与页面显示逻辑一致）
